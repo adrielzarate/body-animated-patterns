@@ -1,0 +1,326 @@
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Pose Patterns</title>
+        <style>
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+            }
+            body, html {
+                margin: 0;
+                padding: 0;
+            }
+            canvas {
+                border: black solid thin;
+                transform: scaleX(-1);
+            }
+            video {
+                transform: scaleX(-1);
+            }
+        </style>
+        <script src="tfjs.js"></script> 
+        <script src="posenet.js"></script>
+    </head>
+    <body>
+        <video id="video" muted="muted"></video>
+        <canvas id="canvas" width="600" height="600"></canvas>
+    </body>
+    <script>
+
+        // canvas constants
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const canvasW = canvas.width;
+        const canvasH = canvas.height;
+
+        // posenet constants
+
+        const outputStride = 16;
+        const flipHorizontal = true;
+
+        // video constants
+
+        const video = document.getElementById('video');
+        const videoWidth = canvasW;
+        const videoHeight = canvasH;
+
+        // app variables
+
+        const squadsInX = squadsInY = 40;
+        const squadWH = canvasW/squadsInX;
+        console.log('squadWH', squadWH);
+
+        // patterns definition
+
+        let allPatterns = [];
+        let patternsInUse = [];
+
+        function ActualPattern(x, y) {
+            this.x = x;
+            this.y = y;
+        }
+
+        function Pattern(x, y) {
+            this.x = x;
+            this.y = y;
+            this.w = 1;
+            this.h = 1;
+            this.maxW = squadWH;
+            this.maxH = squadWH;
+            this.finished = false;
+        }
+
+        Pattern.prototype.drawPattern = function() {
+            ctx.beginPath();
+            ctx.rect(this.x, this.y, this.w, this.h);
+            ctx.stroke();
+        }
+
+        Pattern.prototype.growPattern = function() {
+            this.drawPattern();
+            if (this.w < this.maxW) {
+                this.w += 5;
+            }
+            if (this.h < this.maxH) {
+                this.h += 5;
+            }
+        }
+
+        Pattern.prototype.shrinkPattern = function() {
+            this.drawPattern();
+            if (this.w > 1) {
+                this.w -= 1;
+            }
+            if (this.h > 1) {
+                this.h -= 1;
+            }
+            if(this.w <= 1 && this.h <= 1) {
+            	this.finished = true
+            }
+        }
+
+        // app functions
+
+        function removeDuplicatedObjs(obj) {
+			return obj.filter( (item, index, self) =>
+			  index === self.findIndex( t => (t.x === item.x && t.y === item.y) )
+			);
+        }
+
+		function fillAllPatterns(x, y) {
+			patternsInUse.push(new ActualPattern(x, y));
+			allPatterns.push(new Pattern(x, y));
+
+			allPatterns = removeDuplicatedObjs(allPatterns);
+			patternsInUse = removeDuplicatedObjs(patternsInUse);
+		}
+
+		function drawLines() {
+
+			const indexesGrow = patternsInUse.map( item => allPatterns.findIndex( t => ( t.x === item.x && t.y === item.y )));
+
+			for( let i = 0; i < allPatterns.length; i++ ) {
+
+				if( indexesGrow.includes(i) ) {
+					allPatterns[i].growPattern();
+				} else {
+					allPatterns[i].shrinkPattern();
+					if( allPatterns[i].finished ) allPatterns.splice(i, 1);
+				}
+			}	
+		}
+
+		function bresenhamLine(x1, y1, x2, y2) {
+
+		    // Thanks to @js_tut
+		    // https://www.freecodecamp.org/news/how-to-code-your-first-algorithm-draw-a-line-ca121f9a1395/
+
+		    let x, y, dx, dy, dx1, dy1, px, py, xe, ye, i;
+		    
+		    dx = x2 - x1;
+		    dy = y2 - y1;
+		    
+		    dx1 = Math.abs(dx);
+		    dy1 = Math.abs(dy);
+		    
+		    px = 2 * dy1 - dx1;
+		    py = 2 * dx1 - dy1;
+		    
+		    if (dy1 <= dx1) {
+		        
+		        if (dx >= 0) {
+		            x = x1; y = y1; xe = x2;
+		        } else { 
+		            x = x2; y = y2; xe = x1;
+		        }
+		        
+		        fillAllPatterns(x, y);
+		        
+		        for (i = 0; x < xe; i++) {
+		            x = x + squadWH;
+		            
+		            if (px < 0) {
+		                px = px + 2 * dy1;
+		            } else {
+		                if ((dx < 0 && dy < 0) || (dx > 0 && dy > 0)) {
+		                    y = y + squadWH;
+		                } else {
+		                    y = y - squadWH;
+		                }
+		                px = px + 2 * (dy1 - dx1);
+		            }
+		            
+		            fillAllPatterns(x, y);
+		        }
+		        
+		    } else { 
+		        
+		        if (dy >= 0) {
+		            x = x1; y = y1; ye = y2;
+		        } else { 
+		            x = x2; y = y2; ye = y1;
+		        }
+		        
+		        fillAllPatterns(x, y);
+		        
+		        for (i = 0; y < ye; i++) {
+		            y = y + squadWH;
+		            
+		            if (py <= 0) {
+		                py = py + 2 * dx1;
+		            } else {
+		                if ((dx < 0 && dy<0) || (dx > 0 && dy > 0)) {
+		                    x = x + squadWH;
+		                } else {
+		                    x = x - squadWH;
+		                }
+		                py = py + 2 * (dx1 - dy1);
+		            }
+
+		            fillAllPatterns(x, y);
+		        }
+
+		    }
+		}
+
+		function draw(kp) {
+
+            const limbs = [
+                [kp[1].position, kp[1].position, kp[2].position, kp[2].position],   // eyes
+
+                [kp[5].position, kp[5].position, kp[6].position, kp[6].position],   // shoulders
+
+                [kp[6].position, kp[6].position, kp[8].position, kp[8].position],   // right arm top
+                [kp[8].position, kp[8].position, kp[10].position, kp[10].position], // right arm bottom
+
+                [kp[5].position, kp[5].position, kp[7].position, kp[7].position],   // left arm top
+                [kp[7].position, kp[7].position, kp[9].position, kp[9].position],   // left arm bottom
+
+                [kp[6].position, kp[6].position, kp[12].position, kp[12].position],   // body right
+                [kp[5].position, kp[5].position, kp[11].position, kp[11].position],   // body left
+
+                [kp[12].position, kp[12].position, kp[11].position, kp[11].position],   // middle
+
+                [kp[12].position, kp[12].position, kp[14].position, kp[14].position],   // right leg top
+                [kp[14].position, kp[14].position, kp[16].position, kp[16].position], // right leg bottom
+
+                [kp[11].position, kp[11].position, kp[13].position, kp[13].position],   // left leg top
+                [kp[13].position, kp[13].position, kp[15].position, kp[15].position],   // left leg bottom
+            ];
+
+            for(let i = 0; i < limbs.length; i++) {
+                
+                let gridPosX = 0;
+                let gridPosY = 0;
+
+                let startPatternX = null;
+                let startPatternY = null;
+
+                let endPatternX = null;
+                let endPatternY = null;
+
+                for(let j = 0; j < squadsInX; j++) {
+
+                    gridPosY = 0;
+
+                    for(let k = 0; k < squadsInY; k++) {
+
+                        if ( limbs[i][0].x >= gridPosX && limbs[i][0].x <= gridPosX + squadWH ) startPatternX = gridPosX;
+                        if ( limbs[i][1].y >= gridPosY && limbs[i][1].y <= gridPosY + squadWH ) startPatternY = gridPosY;
+
+                        if ( limbs[i][2].x >= gridPosX && limbs[i][2].x <= gridPosX + squadWH ) endPatternX = gridPosX;
+                        if ( limbs[i][3].y >= gridPosY && limbs[i][3].y <= gridPosY + squadWH ) endPatternY = gridPosY;
+
+                        gridPosY += squadWH;
+                    }
+
+                    gridPosX += squadWH;
+                }
+                
+                bresenhamLine(startPatternX, startPatternY, endPatternX, endPatternY);
+            }
+
+            drawLines();
+		}
+
+        // video setup
+
+        async function setupCamera() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('Browser API navigator.mediaDevices.getUserMedia not available');
+            }
+
+            video.width = videoWidth;
+            video.height = videoHeight;
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                'audio': false,
+                'video': {
+                    facingMode: 'user',
+                    width: videoWidth,
+                    height: videoHeight
+                }
+            });
+            video.srcObject = stream;
+
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    resolve(video);
+                };
+            });
+        }
+
+        async function loadVideo() {
+            const video = await setupCamera();
+            video.play();
+            return video;
+        }
+
+        loadVideo();
+
+        // poseNet
+
+        posenet
+            .load()
+            .then(function(net) {
+                video.play();
+                setInterval(() => {
+                    net
+                    .estimatePoses(video, flipHorizontal, outputStride)
+                    .then(function(pose) {
+                        ctx.clearRect(0, 0, canvasW, canvasH);
+                        patternsInUse = [];
+                        draw(pose[0].keypoints);
+                    });
+                }, 60);   
+            }
+        )
+        .catch(err => {
+            console.log(err.message);
+        });        
+
+    </script>
+</html>
