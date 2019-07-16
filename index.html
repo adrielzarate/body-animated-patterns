@@ -11,6 +11,7 @@
             body, html {
                 margin: 0;
                 padding: 0;
+                font-family: monospace;
             }
             canvas {
                 border: black solid thin;
@@ -19,13 +20,37 @@
             video {
                 transform: scaleX(-1);
             }
+            form {
+                width: 300px;
+                padding: 20px;
+            }
+            .flex {
+                display: flex;
+            }
         </style>
         <script src="tfjs.js"></script> 
         <script src="posenet.js"></script>
     </head>
     <body>
-        <video id="video" muted="muted"></video>
-        <canvas id="canvas" width="600" height="600"></canvas>
+        <div class="flex">
+            <video id="video" muted="muted"></video>
+            <canvas id="canvas" width="600" height="600"></canvas>
+            <form>
+                <p><strong>styles</strong></p>
+                <div>
+                    <input type="radio" name="style" value="squad" checked>
+                    squad
+                </div>
+                <div>
+                    <input type="radio" name="style" value="circle">
+                    circle
+                </div>
+                <div>
+                    <input type="radio" name="style" value="line">
+                    line
+                </div>
+            </form>
+        </div>
     </body>
     <script>
 
@@ -51,7 +76,18 @@
 
         const squadsInX = squadsInY = 40;
         const squadWH = canvasW/squadsInX;
-        console.log('squadWH', squadWH);
+
+        // styles selector
+
+        let patternClass = null;
+        const inputsRadio = document.getElementsByTagName('input');
+        for( let i = 0; i < inputsRadio.length; i++ ) {
+            inputsRadio[i].addEventListener('change', function() {
+                patternsInUse = [];
+                allPatterns = [];
+                patternClass = this.value;
+            });
+        }
 
         // patterns definition
 
@@ -66,20 +102,30 @@
         function Pattern(x, y) {
             this.x = x;
             this.y = y;
+            this.finished = false;
+        }
+
+        /* Squad */
+
+        function PatternSquad(x, y) {
+            Pattern.call(this, x, y);
             this.w = 1;
             this.h = 1;
             this.maxW = squadWH;
             this.maxH = squadWH;
-            this.finished = false;
         }
 
-        Pattern.prototype.drawPattern = function() {
+        PatternSquad.prototype = Object.create(Pattern.prototype);
+
+        PatternSquad.prototype.constructor = PatternSquad;
+
+        PatternSquad.prototype.drawPattern = function() {
             ctx.beginPath();
             ctx.rect(this.x, this.y, this.w, this.h);
             ctx.stroke();
         }
 
-        Pattern.prototype.growPattern = function() {
+        PatternSquad.prototype.grow = function() {
             this.drawPattern();
             if (this.w < this.maxW) {
                 this.w += 5;
@@ -89,7 +135,7 @@
             }
         }
 
-        Pattern.prototype.shrinkPattern = function() {
+        PatternSquad.prototype.shrink = function() {
             this.drawPattern();
             if (this.w > 1) {
                 this.w -= 1;
@@ -98,7 +144,88 @@
                 this.h -= 1;
             }
             if(this.w <= 1 && this.h <= 1) {
-            	this.finished = true
+                this.finished = true
+            }
+        }
+
+        /* Circle */
+
+        function PatternCircle(x, y, rw, rh) {
+            Pattern.call(this, x, y);
+            this.r = 1;
+            this.maxW = squadWH / 4;
+            this.maxH = squadWH / 4;
+        }
+
+        PatternCircle.prototype = Object.create(Pattern.prototype);
+
+        PatternCircle.prototype.constructor = PatternCircle;
+
+        PatternCircle.prototype.draw = function() {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+            ctx.stroke();
+        }
+
+        PatternCircle.prototype.grow = function() {
+            this.draw();
+            // console.log('this.maxW', this.maxW);
+            if(this.r < this.maxW) {
+                this.r += 5;
+            }
+        }
+
+        PatternCircle.prototype.shrink = function() {
+            this.draw();
+            if(this.r > 1) {
+                this.r = this.r - 1;
+            }
+            if(this.r <= 1) {
+                this.finished = true
+            }
+        }
+
+        /* Line */
+
+        function PatternLine(x, y) {
+            Pattern.call(this, x, y);
+            this.w = 1;
+            this.h = 1;
+            this.maxW = squadWH;
+            this.maxH = squadWH;
+        }
+
+        PatternLine.prototype = Object.create(Pattern.prototype);
+
+        PatternLine.prototype.constructor = PatternLine;
+
+        PatternLine.prototype.draw = function() {
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y);
+            ctx.lineTo(this.x + this.w, this.y + this.h);
+            ctx.stroke();
+        }
+
+        PatternLine.prototype.grow = function() {
+            this.draw();
+            if(this.w < this.maxW) {
+                this.w += 2;
+            }
+            if(this.h < this.maxH) {
+                this.h += 2;
+            }
+        }
+
+        PatternLine.prototype.shrink = function() {
+            this.draw();
+            if(this.w > 1) {
+                this.w -= 1;
+            }
+            if(this.h > 1) {
+                this.h -= 1;
+            }
+            if(this.w <= 1 && this.h <= 1) {
+                this.finished = true
             }
         }
 
@@ -112,7 +239,20 @@
 
 		function fillAllPatterns(x, y) {
 			patternsInUse.push(new ActualPattern(x, y));
-			allPatterns.push(new Pattern(x, y));
+
+            switch (patternClass) {
+                case 'line':
+                    allPatterns.push(new PatternLine(x, y));
+                    break;
+                case 'circle':
+                    allPatterns.push(new PatternCircle(x, y));
+                    break;
+                default:
+                    allPatterns.push(new PatternSquad(x, y));
+                    break;
+            }
+
+			// allPatterns.push(new PatternLine(x, y));
 
 			allPatterns = removeDuplicatedObjs(allPatterns);
 			patternsInUse = removeDuplicatedObjs(patternsInUse);
@@ -125,9 +265,9 @@
 			for( let i = 0; i < allPatterns.length; i++ ) {
 
 				if( indexesGrow.includes(i) ) {
-					allPatterns[i].growPattern();
+					allPatterns[i].grow();
 				} else {
-					allPatterns[i].shrinkPattern();
+					allPatterns[i].shrink();
 					if( allPatterns[i].finished ) allPatterns.splice(i, 1);
 				}
 			}	
